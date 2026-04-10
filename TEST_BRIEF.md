@@ -38,12 +38,17 @@ On `/beats`, visitors (no account required) can:
 
 - See published beats one by one in the swipe card UI (already built — reuse `BeatSwipeCard`)
 - **Actually listen to the audio preview** — the play button must work end-to-end (currently it's disabled because no audio is wired in the database)
+- **Audio must AUTO-PLAY** when a beat becomes the active card (i.e. when you land on it or swipe to the next one). The user shouldn't have to click play manually — it's a Tinder-like discovery experience, the music should start by itself
+- The previous beat's audio must stop when the next one starts (no overlapping)
 - See progress bar, play/pause, and 30-second duration display
-- Swipe **left** (reject / next beat)
-- Swipe **right** (add to favorites/cart)
+- Pause/resume button to manually control playback
+- Swipe **left** (reject / next beat — also stops current audio and plays the next)
+- Swipe **right** (add to favorites/cart — also stops current audio and plays the next)
 - See the counter (1/N)
 
 The audio player must stream the real preview file from Supabase Storage.
+
+**Important note about autoplay:** browsers block autoplay with sound until the user has interacted with the page at least once. Handle this gracefully — for example, autoplay starts working after the user clicks "C'est parti" on the onboarding screen, or after the first manual play. Don't crash, don't show errors.
 
 ### 3. Favorites / cart page
 

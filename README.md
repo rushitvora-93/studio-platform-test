@@ -155,6 +155,8 @@ Before submitting, make sure:
 - [ ] Files are uploaded to Supabase Storage with proper buckets and RLS
 - [ ] The marketplace at `/beats` shows real beats from the database
 - [ ] The play button on the swipe card actually plays the preview (with progress bar)
+- [ ] **Audio AUTO-PLAYS** when a beat becomes the active card (after first user interaction)
+- [ ] Previous audio stops when the next beat becomes active (no overlap)
 - [ ] Swipe left rejects, swipe right adds to favorites/cart
 - [ ] Logged-in users can see their favorites/cart on a dedicated page
 - [ ] You recorded a 2-minute video showing the full flow working
