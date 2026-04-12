@@ -1,8 +1,14 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResponse } from "@/types";
 import type { Beat, BeatPurchase, LicenseType } from "@/types";
+import { tmpdir } from "os";
+import { join } from "path";
+import { writeFile, readFile, unlink } from "fs/promises";
+import { randomUUID } from "crypto";
+import { spawn } from "child_process";
 import { createCheckoutSession } from "@/lib/stripe";
 
 export async function getPublishedBeats(): Promise<ActionResponse<Beat[]>> {
@@ -290,18 +296,77 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav", "audio/x-wav",
+  "audio/mpeg", "audio/mp3",
+  "audio/aiff", "audio/x-aiff",
+  "audio/flac",
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
   const parts = filename.split(".");
   if (parts.length < 2) return "";
   return "." + parts.pop()!.toLowerCase();
+}
+
+/**
+ * Trims an audio file to 30 seconds using the ffmpeg-static binary.
+ * Returns a Buffer of the trimmed MP3, or null if trimming fails.
+ */
+async function trim30s(audioFile: File, ext: string): Promise<Buffer | null> {
+  // Resolve ffmpeg binary path at runtime — avoids Turbopack bundling issues with ffmpeg-static
+  const { existsSync } = await import("fs");
+  const binName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const ffmpegBin = join(process.cwd(), "node_modules", "ffmpeg-static", binName);
+  if (!existsSync(ffmpegBin)) {
+    console.error("[trim30s] ffmpeg binary not found at", ffmpegBin);
+    return null;
+  }
+
+  const id = randomUUID();
+  const inPath = join(tmpdir(), `beat-in-${id}${ext}`);
+  const outPath = join(tmpdir(), `beat-preview-${id}.mp3`);
+
+  try {
+    await writeFile(inPath, Buffer.from(await audioFile.arrayBuffer()));
+
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(ffmpegBin, [
+        "-y",
+        "-i", inPath,
+        "-t", "30",
+        "-acodec", "libmp3lame",
+        "-ab", "128k",
+        "-ar", "44100",
+        outPath,
+      ]);
+      const stderr: string[] = [];
+      proc.stderr?.on("data", (d: Buffer) => stderr.push(d.toString()));
+      proc.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-3).join("")}`));
+        }
+      });
+      proc.on("error", reject);
+    });
+
+    const preview = await readFile(outPath);
+    console.log(`[trim30s] Preview generated: ${preview.length} bytes`);
+    return preview;
+  } catch (err) {
+    console.error("[trim30s] Failed:", err);
+    return null;
+  } finally {
+    await Promise.allSettled([unlink(inPath), unlink(outPath)]);
+  }
 }
 
 export async function createBeatWithFiles(
@@ -366,6 +431,7 @@ export async function createBeatWithFiles(
     tags: string[];
     priceSimple: number;
     priceExclusive: number | null;
+    isPublished?: boolean;
   };
   try {
     metadata = JSON.parse(metadataRaw);
@@ -391,7 +457,7 @@ export async function createBeatWithFiles(
       tags: metadata.tags,
       price_simple: metadata.priceSimple,
       price_exclusive: metadata.priceExclusive,
-      is_published: false,
+      is_published: metadata.isPublished === true,
       is_exclusive_sold: false,
     })
     .select()
@@ -402,36 +468,41 @@ export async function createBeatWithFiles(
   }
 
   const basePath = `${user.id}/${beat.id}`;
+  // Use service-role client for storage — avoids RLS on storage.objects
+  // while auth/role checks are already enforced above in application code.
+  const adminStorage = createAdminClient().storage;
 
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await adminStorage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await adminStorage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
-    // Step 4: Upload same audio to beat-previews (public preview)
-    const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    // Step 4: Upload 30-second preview to beat-previews (public)
+    const trimmed = await trim30s(audioFile, audioExt);
+    const previewFile = trimmed ?? Buffer.from(await audioFile.arrayBuffer());
+    const previewPath = `${basePath}/preview.mp3`;
+    const { error: previewErr } = await adminStorage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, previewFile, { contentType: "audio/mpeg", upsert: true });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = adminStorage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = adminStorage
       .from("beat-previews")
-      .getPublicUrl(previewPath);
+      .getPublicUrl(`${basePath}/preview.mp3`);
 
     // Step 6: Update beat record with URLs
     const { data: updatedBeat, error: updateErr } = await supabase
@@ -454,11 +525,11 @@ export async function createBeatWithFiles(
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await adminStorage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
-        `${basePath}/preview${audioExt}`,
+        `${basePath}/preview.mp3`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await adminStorage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }
@@ -619,4 +690,89 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ── Favorites ──
+
+export async function addToFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId });
+
+  // Ignore duplicate (already favorited)
+  if (error && error.code !== "23505") {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true, data: undefined };
+}
+
+export async function removeFromFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getFavorites(): Promise<ActionResponse<(Beat & { favorited_at: string })[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  // Step 1: get the user's favorited beat IDs in order
+  const { data: favRows, error: favError } = await supabase
+    .from("beat_favorites")
+    .select("beat_id, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .returns<{ beat_id: string; created_at: string }[]>();
+
+  if (favError) return { success: false, error: favError.message };
+  if (!favRows || favRows.length === 0) return { success: true, data: [] };
+
+  const beatIds = favRows.map((f) => f.beat_id);
+  const favMap = new Map(favRows.map((f) => [f.beat_id, f.created_at]));
+
+  // Step 2: fetch the full beat records
+  const { data: beats, error: beatsError } = await supabase
+    .from("beats")
+    .select("*")
+    .in("id", beatIds)
+    .returns<Beat[]>();
+
+  if (beatsError) return { success: false, error: beatsError.message };
+
+  // Merge and sort by favorited_at desc (preserving the original order)
+  const result = (beats ?? [])
+    .map((beat) => ({
+      ...beat,
+      favorited_at: favMap.get(beat.id) ?? beat.created_at,
+    }))
+    .sort(
+      (a, b) =>
+        new Date(b.favorited_at).getTime() - new Date(a.favorited_at).getTime(),
+    );
+
+  return { success: true, data: result };
 }

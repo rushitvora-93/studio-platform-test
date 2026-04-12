@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { Beat } from "@/types";
+import { AudioPlayer } from "@/components/beats/audio-player";
 
 interface BeatSwipeCardProps {
   beat: Beat;
@@ -102,19 +103,32 @@ export function BeatSwipeCard({
               : "none",
         }}
       >
-        {/* Dark gradient background */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(135deg, #1a0a2e 0%, #4a1a8a 30%, rgba(217,70,239,0.13) 70%, #1a0a2e 100%)",
-          }}
-        />
+        {/* Background: cover image or gradient fallback */}
+        {beat.cover_image_url ? (
+          <>
+            <img
+              src={beat.cover_image_url}
+              alt={beat.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Dark overlay so text stays readable */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10" />
+          </>
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(135deg, #1a0a2e 0%, #4a1a8a 30%, rgba(217,70,239,0.13) 70%, #1a0a2e 100%)",
+            }}
+          />
+        )}
 
         {/* Content */}
         <div className="relative z-[1] flex h-full flex-col justify-end p-6">
-          {/* Waveform */}
-          <div className="flex flex-1 items-center justify-center gap-[3px] py-8">
+          {/* Waveform (only shown when no cover image) */}
+          {!beat.cover_image_url && (
+          <div className="flex flex-1 items-center justify-center gap-[3px] py-4">
             {WAVEFORM_BARS.map((h, i) => (
               <div
                 key={i}
@@ -129,6 +143,7 @@ export function BeatSwipeCard({
               />
             ))}
           </div>
+          )}
 
           {/* Beat info */}
           <div className="text-center">
@@ -138,29 +153,31 @@ export function BeatSwipeCard({
             >
               {beat.title}
             </h3>
-            <p
-              className="text-text-secondary"
-              style={{ fontSize: 14, marginBottom: 12 }}
-            >
-              Prod. by AquaBeat
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
+            {beat.genre && (
+              <p
+                className="text-white/75"
+                style={{ fontSize: 14, marginBottom: 8 }}
+              >
+                {beat.genre}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-center gap-2" style={{ marginBottom: 16 }}>
               {beat.bpm && <span className="pill">{beat.bpm} BPM</span>}
               {beat.key && <span className="pill">{beat.key}</span>}
-              {beat.genre && <span className="pill">{beat.genre}</span>}
             </div>
           </div>
-        </div>
 
-        {/* Progress bar */}
-        <div
-          className="absolute bottom-0 left-0 right-0"
-          style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
-        >
+          {/* Audio Player — stop pointer events from triggering swipe */}
           <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
-          />
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <AudioPlayer
+              beatId={beat.id}
+              previewUrl={beat.audio_preview_url}
+            />
+          </div>
         </div>
       </div>
     </div>
