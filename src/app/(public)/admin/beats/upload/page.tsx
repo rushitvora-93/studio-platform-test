@@ -18,7 +18,7 @@ const KEYS = [
   "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm",
 ];
 
-export default function BeatUploadPage() {
+export default function AdminBeatUploadPage() {
   const router = useRouter();
 
   const [title, setTitle] = useState("");
@@ -28,6 +28,7 @@ export default function BeatUploadPage() {
   const [tags, setTags] = useState("");
   const [priceSimple, setPriceSimple] = useState(35);
   const [priceExclusive, setPriceExclusive] = useState(199);
+  const [isPublished, setIsPublished] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
@@ -64,6 +65,7 @@ export default function BeatUploadPage() {
           .filter(Boolean),
         priceSimple,
         priceExclusive: priceExclusive > 0 ? priceExclusive : null,
+        isPublished,
       }),
     );
 
@@ -76,27 +78,32 @@ export default function BeatUploadPage() {
     }
 
     toast({
-      title: "Beat créé !",
-      description: "Ton beat a été uploadé et enregistré en brouillon.",
+      title: isPublished ? "Beat publié !" : "Beat créé en brouillon",
+      description: isPublished
+        ? "Le beat est maintenant visible dans la marketplace."
+        : "Tu peux le publier depuis le catalogue.",
       variant: "success",
     });
 
-    router.push("/engineer/beats");
+    router.push("/admin/beats");
   }
 
   return (
     <div className="mx-auto max-w-[600px] px-4 py-12 md:px-6 md:py-20">
       <Link
-        href="/engineer/beats"
+        href="/admin/beats"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-muted transition-colors hover:text-text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
-        Mes beats
+        Catalogue beats
       </Link>
 
       <h1 className="font-display text-2xl font-bold md:text-3xl">
-        Upload un beat
+        Uploader un beat
       </h1>
+      <p className="mt-1 text-sm text-text-secondary">
+        Formats acceptés : WAV, MP3, AIFF, FLAC — max 200 Mo
+      </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
         {/* Title */}
@@ -161,7 +168,7 @@ export default function BeatUploadPage() {
               id="key"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              className="w-full cursor-pointer rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
             >
               {KEYS.map((k) => (
                 <option key={k} value={k}>
@@ -181,7 +188,7 @@ export default function BeatUploadPage() {
             id="genre"
             value={genre}
             onChange={(e) => setGenre(e.target.value)}
-            className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            className="w-full cursor-pointer rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
           >
             {GENRES.map((g) => (
               <option key={g} value={g}>
@@ -209,10 +216,7 @@ export default function BeatUploadPage() {
         {/* Pricing */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label
-              htmlFor="priceSimple"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceSimple" className="mb-1.5 block text-sm font-medium">
               Prix licence simple (€) *
             </label>
             <input
@@ -225,10 +229,7 @@ export default function BeatUploadPage() {
             />
           </div>
           <div>
-            <label
-              htmlFor="priceExclusive"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceExclusive" className="mb-1.5 block text-sm font-medium">
               Prix licence exclusive (€)
             </label>
             <input
@@ -236,15 +237,36 @@ export default function BeatUploadPage() {
               type="number"
               min={0}
               value={priceExclusive}
-              onChange={(e) =>
-                setPriceExclusive(parseInt(e.target.value) || 0)
-              }
+              onChange={(e) => setPriceExclusive(parseInt(e.target.value) || 0)}
               className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
-            <p className="mt-1 text-xs text-text-muted">
-              0 = pas de licence exclusive
+            <p className="mt-1 text-xs text-text-muted">0 = pas de licence exclusive</p>
+          </div>
+        </div>
+
+        {/* Publish toggle */}
+        <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-bg-surface p-4">
+          <div>
+            <p className="text-sm font-medium">Publier immédiatement</p>
+            <p className="text-xs text-text-muted">
+              Le beat sera visible dans la marketplace dès l&apos;upload.
             </p>
           </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublished}
+            onClick={() => setIsPublished((v) => !v)}
+            className={`relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full transition-colors ${
+              isPublished ? "bg-brand-gradient" : "bg-bg-hover"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                isPublished ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
         </div>
 
         {errors.form && <p className="text-sm text-error">{errors.form}</p>}
@@ -252,7 +274,7 @@ export default function BeatUploadPage() {
         {/* Submit */}
         <div className="flex gap-3">
           <Link
-            href="/engineer/beats"
+            href="/admin/beats"
             className="flex-1 rounded-lg border border-border-default px-6 py-3 text-center text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
           >
             Annuler
@@ -260,9 +282,13 @@ export default function BeatUploadPage() {
           <button
             type="submit"
             disabled={pending}
-            className="flex-1 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex-1 cursor-pointer rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Création..." : "Enregistrer en brouillon"}
+            {pending
+              ? "Upload en cours..."
+              : isPublished
+              ? "Uploader et publier"
+              : "Enregistrer en brouillon"}
           </button>
         </div>
       </form>
