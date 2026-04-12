@@ -1,35 +1,51 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
-import { getPublishedBeats } from "@/actions/beats";
+import { getPublishedBeats, addToFavorites } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
-import { MOCK_BEATS } from "@/lib/mock-beats";
+import { useAudioStore } from "@/stores/audio-store";
+import { toast } from "@/components/ui/toaster";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
-  const router = useRouter();
   const [beats, setBeats] = useState<Beat[]>([]);
+  // currentIndex drives the counter and updates immediately on swipe
   const [currentIndex, setCurrentIndex] = useState(0);
+  // renderIndex drives the card and updates after the exit animation
+  const [renderIndex, setRenderIndex] = useState(0);
   const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null);
   const animatingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
+
+  const { play, stop } = useAudioStore();
+
+  // Auto-play whenever the rendered beat changes (after first interaction)
+  useEffect(() => {
+    if (!hasInteracted || beats.length === 0 || renderIndex >= beats.length) return;
+    const beat = beats[renderIndex];
+    if (beat.audio_preview_url) {
+      play(beat.id, beat.audio_preview_url);
+    }
+  }, [renderIndex, hasInteracted, beats, play]);
 
   useEffect(() => {
     // Check localStorage after mount (avoids SSR/hydration mismatch)
-    if (!localStorage.getItem("studio_beats_onboarded")) {
+    const alreadyOnboarded = !!localStorage.getItem("studio_beats_onboarded");
+    if (!alreadyOnboarded) {
       setShowOnboarding(true);
+    } else {
+      // User has already completed onboarding — treat as interacted
+      setHasInteracted(true);
     }
 
     async function load() {
       const result = await getPublishedBeats();
       if (result.success && result.data.length > 0) {
         setBeats(result.data);
-      } else {
-        setBeats(MOCK_BEATS);
       }
       setLoading(false);
     }
@@ -39,24 +55,46 @@ export default function BeatsPage() {
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
     setShowOnboarding(false);
+    // Mark as interacted so auto-play works from now on
+    setHasInteracted(true);
   }, []);
 
   const animateAndAdvance = useCallback(
     (direction: "left" | "right") => {
       if (animatingRef.current) return;
       animatingRef.current = true;
+
+      stop();
       setExitDirection(direction);
+      // Counter updates immediately so the user sees it change on swipe
+      setCurrentIndex((i) => i + 1);
+
+      if (direction === "right" && beats[renderIndex]) {
+        const beat = beats[renderIndex];
+        addToFavorites(beat.id).then((result) => {
+          if (result.success) {
+            toast({
+              title: "Ajouté aux favoris",
+              description: beat.title,
+              variant: "success",
+            });
+          } else if (result.error === "Connexion requise") {
+            toast({
+              title: "Connecte-toi pour sauvegarder tes favoris",
+              variant: "default",
+            });
+          }
+        });
+      }
 
       setTimeout(() => {
-        if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
-        }
-        setCurrentIndex((i) => i + 1);
+        // Card switches after exit animation completes
+        setRenderIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router],
+    [beats, renderIndex, stop],
   );
 
   const handleSwipeLeft = useCallback(() => {
@@ -99,7 +137,7 @@ export default function BeatsPage() {
   }
 
   // All beats swiped
-  if (currentIndex >= beats.length) {
+  if (renderIndex >= beats.length) {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">
         <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-bg-surface">
@@ -113,7 +151,11 @@ export default function BeatsPage() {
         </p>
         <button
           type="button"
-          onClick={() => setCurrentIndex(0)}
+          onClick={() => {
+            stop();
+            setCurrentIndex(0);
+            setRenderIndex(0);
+          }}
           className="mt-6 inline-flex items-center gap-2 rounded-lg border border-border-default px-6 py-3 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
         >
           Recommencer
@@ -135,7 +177,7 @@ export default function BeatsPage() {
           style={{ padding: "var(--space-4, 16px)" }}
         >
           <span className="font-mono text-xs text-text-muted">
-            {currentIndex + 1} / {beats.length}
+            {Math.min(currentIndex + 1, beats.length)} / {beats.length}
           </span>
         </div>
 
@@ -152,10 +194,10 @@ export default function BeatsPage() {
 
         {/* Card stack */}
         <div className="beat-card-container">
-          <div className="relative" style={{ width: "100%", maxWidth: 340, height: 420 }}>
+          <div className="relative" style={{ width: "100%", maxWidth: 340, height: 460 }}>
             <BeatSwipeCard
-              key={beats[currentIndex].id}
-              beat={beats[currentIndex]}
+              key={beats[renderIndex].id}
+              beat={beats[renderIndex]}
               isTop={true}
               exitDirection={exitDirection}
               onSwipeLeft={handleSwipeLeft}
@@ -179,12 +221,12 @@ export default function BeatsPage() {
             </svg>
           </button>
 
-          {/* Like */}
+          {/* Like / Favorites */}
           <button
             type="button"
             onClick={handleSwipeRight}
             className="swipe-btn swipe-btn-like"
-            aria-label="Voir les détails de la prod"
+            aria-label="Ajouter aux favoris"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
