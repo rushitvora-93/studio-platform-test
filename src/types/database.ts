@@ -221,6 +221,7 @@ export type Database = {
           is_published: boolean;
           play_count: number;
           like_count: number;
+          sort_order: number;
           created_at: string;
           updated_at: string;
         };
@@ -242,6 +243,7 @@ export type Database = {
           is_published?: boolean;
           play_count?: number;
           like_count?: number;
+          sort_order?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -262,6 +264,7 @@ export type Database = {
           is_published?: boolean;
           play_count?: number;
           like_count?: number;
+          sort_order?: number;
           updated_at?: string;
         };
         Relationships: [];
@@ -520,6 +523,25 @@ export type Database = {
         };
         Relationships: [];
       };
+      beat_favorites: {
+        Row: {
+          id: string;
+          user_id: string;
+          beat_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          beat_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          beat_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -577,3 +599,7 @@ export type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 export type BookingUpdate = Database["public"]["Tables"]["bookings"]["Update"];
 export type BeatUpdate = Database["public"]["Tables"]["beats"]["Update"];
 export type MixingOrderUpdate = Database["public"]["Tables"]["mixing_orders"]["Update"];
+
+// Beat favorites
+export type BeatFavorite = Database["public"]["Tables"]["beat_favorites"]["Row"];
+export type BeatFavoriteInsert = Database["public"]["Tables"]["beat_favorites"]["Insert"];

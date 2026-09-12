@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { Play, Pause } from "lucide-react";
 import { useAudioStore } from "@/stores/audio-store";
 
 interface AudioPlayerProps {
@@ -12,6 +12,8 @@ interface AudioPlayerProps {
 
 export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Tracks whether the browser is actually playing audio (vs store intent)
+  const [browserPlaying, setBrowserPlaying] = useState(false);
   const {
     currentBeatId,
     isPlaying,
@@ -31,7 +33,10 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     const audio = audioRef.current;
 
     if (isActive && isPlaying) {
-      audio.play().catch(() => {});
+      audio.play().catch(() => {
+        // Browser blocked autoplay — keep button as Play
+        setBrowserPlaying(false);
+      });
     } else {
       audio.pause();
     }
@@ -95,9 +100,11 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
           ref={audioRef}
           src={isActive ? previewUrl : undefined}
           preload="none"
+          onPlay={() => setBrowserPlaying(true)}
+          onPause={() => setBrowserPlaying(false)}
+          onEnded={() => { setBrowserPlaying(false); pause(); }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onEnded={() => pause()}
         />
       )}
 
@@ -109,7 +116,7 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
           disabled={!previewUrl}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white transition-opacity hover:opacity-90 disabled:opacity-30"
         >
-          {isActive && isPlaying ? (
+          {isActive && browserPlaying ? (
             <Pause className="h-4 w-4" />
           ) : (
             <Play className="ml-0.5 h-4 w-4" />
@@ -130,7 +137,7 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
             </div>
 
             {/* Time */}
-            <span className="flex-shrink-0 font-mono text-xs text-text-muted">
+            <span className="flex-shrink-0 font-mono text-xs text-text-primary">
               {isActive ? formatTime(currentTime) : "0:00"} /{" "}
               {isActive && duration > 0 ? formatTime(duration) : "0:30"}
             </span>

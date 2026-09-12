@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResponse, Beat } from "@/types";
 
 async function verifyAdmin() {
@@ -27,11 +28,20 @@ export async function getAdminBeats(): Promise<ActionResponse<AdminBeat[]>> {
   const { supabase, isAdmin } = await verifyAdmin();
   if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  const { data: beats, error } = await supabase
+  let { data: beats, error } = await supabase
     .from("beats")
     .select("*")
-    .order("created_at", { ascending: false })
+    .order("sort_order", { ascending: true })
     .returns<Beat[]>();
+
+  // Fallback if sort_order column doesn't exist yet (migration not applied)
+  if (error?.message?.includes("sort_order")) {
+    ({ data: beats, error } = await supabase
+      .from("beats")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .returns<Beat[]>());
+  }
 
   if (error) return { success: false, error: error.message };
 
@@ -82,16 +92,58 @@ export async function adminUpdateBeat(
   return { success: true, data: undefined };
 }
 
+export async function adminReorderBeats(
+  orderedIds: string[],
+): Promise<ActionResponse> {
+  const { supabase, isAdmin } = await verifyAdmin();
+  if (!isAdmin) return { success: false, error: "Accès refusé" };
+
+  const updates = orderedIds.map((id, index) =>
+    supabase.from("beats").update({ sort_order: index }).eq("id", id),
+  );
+  await Promise.all(updates);
+  return { success: true, data: undefined };
+}
+
 export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
   const { supabase, isAdmin } = await verifyAdmin();
   if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  // Unpublish instead of hard delete (preserves purchase history)
-  const { error } = await supabase
+  // Fetch beat to get owner id before deleting
+  const { data: beat, error: fetchErr } = await supabase
     .from("beats")
-    .update({ is_published: false })
+    .select("id, beatmaker_id")
+    .eq("id", beatId)
+    .single<{ id: string; beatmaker_id: string }>();
+
+  if (fetchErr || !beat) return { success: false, error: fetchErr?.message ?? "Beat introuvable" };
+
+  // Hard delete the DB record (cascades to beat_favorites via FK)
+  const { error: deleteErr } = await supabase
+    .from("beats")
+    .delete()
     .eq("id", beatId);
 
-  if (error) return { success: false, error: error.message };
+  if (deleteErr) return { success: false, error: deleteErr.message };
+
+  // Best-effort storage cleanup (don't fail the action if this errors)
+  try {
+    const adminStorage = createAdminClient().storage;
+    const basePath = `${beat.beatmaker_id}/${beat.id}`;
+
+    // Collect all known paths under this beat's folder in both buckets
+    const { data: previewFiles } = await adminStorage.from("beat-previews").list(basePath);
+    const { data: privateFiles } = await adminStorage.from("beat-files").list(basePath);
+
+    if (previewFiles?.length) {
+      await adminStorage.from("beat-previews").remove(previewFiles.map((f) => `${basePath}/${f.name}`));
+    }
+    if (privateFiles?.length) {
+      await adminStorage.from("beat-files").remove(privateFiles.map((f) => `${basePath}/${f.name}`));
+    }
+  } catch (err) {
+    console.error("[adminDeleteBeat] Storage cleanup failed:", err);
+  }
+
   return { success: true, data: undefined };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, LogOut, Trash2, Clock, SlidersHorizontal } from "lucide-react";
+import { User, LogOut, Trash2, Clock, SlidersHorizontal, Heart } from "lucide-react";
 import Link from "next/link";
 import { getProfile, updateProfile, signOut, deleteAccount } from "@/actions/profile";
 import { toast } from "@/components/ui/toaster";
@@ -130,7 +130,7 @@ export default function AccountPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="flex gap-3 mb-6">
+      <div className="grid grid-cols-3 gap-3 mb-6">
         <Link href="/account/history" className="flex-1 rounded-xl border border-border-subtle bg-bg-elevated p-4 text-center transition-colors hover:border-border-default">
           <Clock className="mx-auto mb-2 h-5 w-5 text-purple-500" />
           <span className="text-xs font-medium">Historique</span>
@@ -138,6 +138,10 @@ export default function AccountPage() {
         <Link href="/account/mixing" className="flex-1 rounded-xl border border-border-subtle bg-bg-elevated p-4 text-center transition-colors hover:border-border-default">
           <SlidersHorizontal className="mx-auto mb-2 h-5 w-5 text-purple-500" />
           <span className="text-xs font-medium">Mixages</span>
+        </Link>
+        <Link href="/account/favorites" className="flex-1 rounded-xl border border-border-subtle bg-bg-elevated p-4 text-center transition-colors hover:border-border-default">
+          <Heart className="mx-auto mb-2 h-5 w-5 text-purple-500" />
+          <span className="text-xs font-medium">Favoris</span>
         </Link>
       </div>
 

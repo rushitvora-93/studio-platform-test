@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getBeatBySlug, purchaseBeat } from "@/actions/beats";
-import { MOCK_BEATS } from "@/lib/mock-beats";
 import { AudioPlayer } from "@/components/beats/audio-player";
 import { LicenseSelector } from "@/components/beats/license-selector";
 import type { Beat } from "@/types";
@@ -27,13 +26,7 @@ export default function BeatDetailPage() {
       if (result.success) {
         setBeat(result.data);
       } else {
-        // Fallback to mock data if beat not found in DB
-        const mockBeat = MOCK_BEATS.find((b) => b.slug === params.slug);
-        if (mockBeat) {
-          setBeat(mockBeat);
-        } else {
-          setError(result.error);
-        }
+        setError(result.error);
       }
       setLoading(false);
     }
@@ -88,8 +81,8 @@ export default function BeatDetailPage() {
       <div className="grid gap-8 md:grid-cols-[1fr_320px]">
         {/* Left: Beat info */}
         <div>
-          {/* Cover */}
-          <div className="aspect-square w-full overflow-hidden rounded-xl bg-gradient-to-br from-purple-600/40 to-magenta-500/40">
+          {/* Cover with overlaid title */}
+          <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gradient-to-br from-purple-600/40 to-pink-500/40">
             {beat.cover_image_url ? (
               <img
                 src={beat.cover_image_url}
@@ -98,38 +91,38 @@ export default function BeatDetailPage() {
               />
             ) : (
               <div className="flex h-full items-center justify-center">
-                <span className="font-display text-8xl font-bold text-white/20">
-                  ♫
-                </span>
+                <span className="font-display text-8xl font-bold text-white/20">♫</span>
               </div>
             )}
-          </div>
+            {/* Dark gradient scrim */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
 
-          {/* Title + metadata */}
-          <h1 className="mt-6 font-display text-[30px] font-bold leading-tight">
-            {beat.title}
-          </h1>
-          <p className="mt-1 text-text-secondary">{beat.genre ?? "Beat"}</p>
-
-          {/* Metadata */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {beat.bpm && (
-              <span className="rounded-full bg-bg-surface px-3 py-1 font-mono text-xs text-text-muted">
-                {beat.bpm} BPM
-              </span>
-            )}
-            {beat.key && (
-              <span className="rounded-full bg-bg-surface px-3 py-1 font-mono text-xs text-text-muted">
-                {beat.key}
-              </span>
-            )}
-            <span className="rounded-full bg-bg-surface px-3 py-1 font-mono text-xs text-text-muted">
-              {beat.play_count} écoutes
-            </span>
+            {/* Title + metadata overlaid at bottom */}
+            <div className="absolute bottom-0 left-0 right-0 p-5">
+              <h1 className="font-display text-[26px] font-bold leading-tight text-white drop-shadow-md md:text-[30px]">
+                {beat.title}
+              </h1>
+              <p className="mt-1 text-sm text-white/70">{beat.genre ?? "Beat"}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {beat.bpm && (
+                  <span className="rounded-full bg-white/15 px-3 py-1 font-mono text-xs text-white backdrop-blur-sm">
+                    {beat.bpm} BPM
+                  </span>
+                )}
+                {beat.key && (
+                  <span className="rounded-full bg-white/15 px-3 py-1 font-mono text-xs text-white backdrop-blur-sm">
+                    {beat.key}
+                  </span>
+                )}
+                <span className="rounded-full bg-white/15 px-3 py-1 font-mono text-xs text-white backdrop-blur-sm">
+                  {beat.play_count} écoutes
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Audio player */}
-          <div className="mt-6">
+          <div className="mt-5">
             <AudioPlayer beatId={beat.id} previewUrl={beat.audio_preview_url} />
           </div>
 
